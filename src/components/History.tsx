@@ -8,6 +8,7 @@ import { bytes, shortPath } from "../lib/format";
 export function History({ home, refreshKey }: { home: string; refreshKey: number }) {
   const [reports, setReports] = useState<ReclaimReport[] | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [problem, setProblem] = useState<string | null>(null);
 
   useEffect(() => {
     void reclaimHistory().then(setReports).catch(() => setReports([]));
@@ -43,9 +44,24 @@ export function History({ home, refreshKey }: { home: string; refreshKey: number
             All of it is still in your Trash. Emptying the Trash is what finally frees
             the space.
           </p>
-          <button className="btn-secondary" onClick={() => void openTrash()}>
+          {/* A silent failure here is worse than useless: the user is being
+              told their files are recoverable and handed a button that does
+              nothing. Surface it. */}
+          <button
+            className="btn-secondary"
+            onClick={() => {
+              setProblem(null);
+              void openTrash().catch(() =>
+                setProblem(
+                  "Reclaim couldn't open the Trash. You can reach it from the Dock instead.",
+                ),
+              );
+            }}
+          >
             Open Trash
           </button>
+
+          {problem && <p className="hist-problem">{problem}</p>}
         </div>
       </div>
 

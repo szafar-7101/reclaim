@@ -470,6 +470,7 @@ input { font: inherit; }
 
 /* ============================ history ============================ */
 
+.hist-problem { margin: 12px 0 0; font-size: 13px; color: var(--warn); }
 .hist-note { margin: 0 0 18px; font-size: 13.5px; color: var(--ink-2); max-width: 56ch; }
 
 .hist-row {
