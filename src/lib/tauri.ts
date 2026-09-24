@@ -43,3 +43,17 @@ export async function saveApiKey(key: string): Promise<void> {
   await store.set(KEY_FIELD, key.trim());
   await store.save();
 }
+
+/** Opens a path in Finder. Used to show the Trash after a clear-out, because
+ *  "it's recoverable" only reassures someone who can see where it went. */
+export async function revealInFinder(path: string): Promise<void> {
+  const { openPath } = await import("@tauri-apps/plugin-opener");
+  await openPath(path);
+}
+
+/** The user's Trash. Tauri resolves `~` itself only for its own path APIs, so
+ *  the home directory comes from the Rust side. */
+export async function openTrash(): Promise<void> {
+  const home = await defaultScanRoot();
+  await revealInFinder(`${home}/.Trash`);
+}

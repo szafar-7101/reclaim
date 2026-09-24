@@ -11,7 +11,8 @@ import {
 } from "./lib/tauri";
 import { bytes } from "./lib/format";
 import { CapacityBar } from "./components/CapacityBar";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type View } from "./components/Sidebar";
+import { History } from "./components/History";
 import { ArtifactTable, type SortKey } from "./components/ArtifactTable";
 import { SettingsSheet } from "./components/SettingsSheet";
 import "./App.css";
@@ -19,6 +20,9 @@ import "./App.css";
 type Phase = "idle" | "scanning" | "checking" | "ready" | "removing";
 
 export default function App() {
+  const [view, setView] = useState<View>("scan");
+  /** Bumped after a removal so the history view refetches its receipts. */
+  const [historyKey, setHistoryKey] = useState(0);
   const [apiKey, setApiKey] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [root, setRoot] = useState("");
@@ -193,6 +197,7 @@ export default function App() {
       setCleared(report.bytes_reclaimed);
       setItems((prev) => prev.filter((a) => !selected.has(a.candidate.id)));
       setSelected(new Set());
+      setHistoryKey((k) => k + 1);
       setPhase("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -206,6 +211,8 @@ export default function App() {
   return (
     <div className="shell">
       <Sidebar
+        view={view}
+        onView={setView}
         projects={liveProjects}
         selectedId={projectFilter}
         onSelect={setProjectFilter}
@@ -216,6 +223,7 @@ export default function App() {
 
       <div className="main">
         <header className="header">
+          {view === "scan" && (
           <button
             className="folder"
             disabled={busy}
@@ -230,9 +238,13 @@ export default function App() {
             <span>{root ? root.replace(home, "~") : "Choose a folder"}</span>
           </button>
 
-          <button className="btn-primary" onClick={handleScan} disabled={busy || !root}>
-            {phase === "scanning" ? "Looking…" : phase === "checking" ? "Checking…" : "Scan"}
-          </button>
+          )}
+
+          {view === "scan" && (
+            <button className="btn-primary" onClick={handleScan} disabled={busy || !root}>
+              {phase === "scanning" ? "Looking…" : phase === "checking" ? "Checking…" : "Scan"}
+            </button>
+          )}
 
           <div className="header-spacer" />
         </header>
@@ -247,6 +259,16 @@ export default function App() {
         )}
 
         <div className="scroll">
+          {view === "history" ? (
+            <>
+              <div className="title-block">
+                <h1>Recently cleared</h1>
+                <p>Everything Reclaim has moved to your Trash.</p>
+              </div>
+              <History home={home} refreshKey={historyKey} />
+            </>
+          ) : (
+          <>
           <div className="title-block">
             <h1>{activeProject ? activeProject.name : "Free up space"}</h1>
             <p>
@@ -266,6 +288,9 @@ export default function App() {
             <div className="banner banner-ok">
               Moved <strong>{bytes(cleared)}</strong> to the Trash. You can still get it back
               until you empty it.
+              <button className="link" onClick={() => setView("history")}>
+                See what was cleared
+              </button>
             </div>
           )}
 
@@ -301,9 +326,11 @@ export default function App() {
               canScan={!busy && !!root}
             />
           )}
+          </>
+          )}
         </div>
 
-        {selected.size > 0 && (
+        {view === "scan" && selected.size > 0 && (
           <footer className="actionbar">
             <span className="actionbar-count">
               <strong>{bytes(selectedBytes)}</strong> selected in {selected.size}{" "}
