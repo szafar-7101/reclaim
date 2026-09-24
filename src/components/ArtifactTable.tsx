@@ -4,6 +4,14 @@ import { age, bytes, onDate, shortPath } from "../lib/format";
 import { KIND_NAME, VERDICT_PILL } from "../lib/language";
 
 export type SortKey = "size" | "age" | "name";
+type Filter = "all" | "safe" | "review" | "keep";
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "safe", label: "Safe to remove" },
+  { key: "review", label: "Worth checking" },
+  { key: "keep", label: "Keeping" },
+];
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "size", label: "Size" },
@@ -33,21 +41,28 @@ export function ArtifactTable({
   title: string;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<Filter>("all");
 
   const projectById = useMemo(
     () => new Map(projects.map((p) => [p.id, p])),
     [projects],
   );
 
+  const counts = useMemo(() => {
+    const c = { all: assessments.length, safe: 0, review: 0, keep: 0 };
+    for (const a of assessments) c[a.verdict] += 1;
+    return c;
+  }, [assessments]);
+
   const rows = useMemo(() => {
-    const copy = [...assessments];
+    const copy = assessments.filter((a) => filter === "all" || a.verdict === filter);
     copy.sort((a, b) => {
       if (sort === "size") return b.candidate.size_bytes - a.candidate.size_bytes;
       if (sort === "age") return b.candidate.age_days - a.candidate.age_days;
       return a.candidate.name.localeCompare(b.candidate.name);
     });
     return copy;
-  }, [assessments, sort]);
+  }, [assessments, sort, filter]);
 
   const selectableIds = rows
     .filter((r) => r.verdict !== "keep")
@@ -62,7 +77,24 @@ export function ArtifactTable({
         <span className="list-count">
           {rows.length} {rows.length === 1 ? "folder" : "folders"}
         </span>
+      </div>
+
+      <div className="list-controls">
+        <div className="segmented">
+          {FILTERS.filter((f) => f.key === "all" || counts[f.key] > 0).map((f) => (
+            <button
+              key={f.key}
+              className={`seg${filter === f.key ? " is-on" : ""}`}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+              <span className="seg-n">{counts[f.key]}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="spacer" />
+
         <div className="sortbar">
           <span>Sort by</span>
           {SORTS.map((s) => (
@@ -89,7 +121,9 @@ export function ArtifactTable({
               onChange={(e) => onToggleAll(selectableIds, e.target.checked)}
               aria-label="Select all"
             />
-            <span className="item-where">Select all that can be removed</span>
+            <span className="item-where">
+              {allSelected ? "Deselect all" : "Select everything shown that can be removed"}
+            </span>
           </div>
 
           {rows.map((a) => {

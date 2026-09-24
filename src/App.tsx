@@ -66,10 +66,48 @@ export default function App() {
     [items, selected],
   );
 
+  /**
+   * Projects derived from what's still on screen, not from the original scan.
+   *
+   * The scan result is a snapshot from before anything was removed, so reading
+   * the sidebar straight off it leaves cleared projects sitting there with
+   * their old sizes. Recomputing from `items` means the sidebar cannot drift:
+   * a project whose folders have all gone simply has nothing left to sum.
+   */
+  const liveProjects = useMemo(() => {
+    const totals = new Map<string, { bytes: number; count: number }>();
+
+    for (const a of items) {
+      const id = a.candidate.project_id;
+      if (!id) continue;
+      const entry = totals.get(id) ?? { bytes: 0, count: 0 };
+      entry.bytes += a.candidate.size_bytes;
+      entry.count += 1;
+      totals.set(id, entry);
+    }
+
+    return (scan?.projects ?? [])
+      .filter((p) => totals.has(p.id))
+      .map((p) => ({
+        ...p,
+        reclaimable_bytes: totals.get(p.id)!.bytes,
+        candidate_count: totals.get(p.id)!.count,
+      }))
+      .sort((a, b) => b.reclaimable_bytes - a.reclaimable_bytes);
+  }, [scan, items]);
+
   const activeProject = useMemo(
-    () => scan?.projects.find((p) => p.id === projectFilter) ?? null,
-    [scan, projectFilter],
+    () => liveProjects.find((p) => p.id === projectFilter) ?? null,
+    [liveProjects, projectFilter],
   );
+
+  // If the project you were looking at just emptied out, fall back to the full
+  // list rather than leaving the view filtered to nothing.
+  useEffect(() => {
+    if (projectFilter && !liveProjects.some((p) => p.id === projectFilter)) {
+      setProjectFilter(null);
+    }
+  }, [liveProjects, projectFilter]);
 
   const handleScan = useCallback(async () => {
     setError(null);
@@ -168,7 +206,7 @@ export default function App() {
   return (
     <div className="shell">
       <Sidebar
-        projects={scan?.projects ?? []}
+        projects={liveProjects}
         selectedId={projectFilter}
         onSelect={setProjectFilter}
         totalBytes={items.reduce((s, a) => s + a.candidate.size_bytes, 0)}
@@ -246,7 +284,7 @@ export default function App() {
           {items.length > 0 ? (
             <ArtifactTable
               assessments={visible}
-              projects={scan?.projects ?? []}
+              projects={liveProjects}
               home={home}
               selected={selected}
               onToggle={toggle}
@@ -256,7 +294,12 @@ export default function App() {
               title={activeProject ? "In this project" : "What Reclaim found"}
             />
           ) : (
-            <EmptyState phase={phase} scanned={scan !== null} />
+            <EmptyState
+              phase={phase}
+              scanned={scan !== null}
+              onScan={handleScan}
+              canScan={!busy && !!root}
+            />
           )}
         </div>
 
@@ -292,20 +335,47 @@ export default function App() {
   );
 }
 
-function EmptyState({ phase, scanned }: { phase: Phase; scanned: boolean }) {
+function EmptyState({
+  phase,
+  scanned,
+  onScan,
+  canScan,
+}: {
+  phase: Phase;
+  scanned: boolean;
+  onScan: () => void;
+  canScan: boolean;
+}) {
   if (phase === "scanning" || phase === "checking") return null;
-  if (scanned) return <p className="empty">Nothing to clear in this folder.</p>;
+
+  if (scanned) {
+    return (
+      <div className="card">
+        <div className="empty">
+          <h2>All clear</h2>
+          <p>There's nothing worth removing in this folder.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="empty empty-first">
-      <h2>Nothing scanned yet</h2>
-      <p>
-        Reclaim finds the folders your projects create and can recreate — downloaded
-        packages, build output, caches — and clears the ones you don't need.
-      </p>
-      <p className="empty-note">
-        Choose a folder above and press Scan. Nothing is removed unless you select it.
-      </p>
+    <div className="card">
+      <div className="empty empty-first">
+        <h2>Free up space without losing anything</h2>
+        <p>
+          Your projects create folders they can recreate on demand — downloaded packages,
+          build output, caches. They add up to gigabytes, and you don't need to keep them.
+        </p>
+        <button className="btn-primary btn-lg" onClick={onScan} disabled={!canScan}>
+          Scan this folder
+        </button>
+        <ul className="reassure">
+          <li>Nothing is removed unless you tick it</li>
+          <li>Everything goes to the Trash, so you can put it back</li>
+          <li>Folders with unsaved work are left alone</li>
+        </ul>
+      </div>
     </div>
   );
 }
