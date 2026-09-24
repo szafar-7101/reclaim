@@ -15,11 +15,13 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { History } from "./components/History";
 import { ArtifactTable, type SortKey } from "./components/ArtifactTable";
 import { SettingsSheet } from "./components/SettingsSheet";
+import { useTheme } from "./lib/useTheme";
 import "./App.css";
 
 type Phase = "idle" | "scanning" | "checking" | "ready" | "removing";
 
 export default function App() {
+  const [theme, setTheme] = useTheme();
   const [view, setView] = useState<View>("scan");
   /** Bumped after a removal so the history view refetches its receipts. */
   const [historyKey, setHistoryKey] = useState(0);
@@ -219,6 +221,8 @@ export default function App() {
         totalBytes={items.reduce((s, a) => s + a.candidate.size_bytes, 0)}
         totalCount={items.length}
         onSettings={() => setShowSettings(true)}
+        theme={theme}
+        onTheme={setTheme}
       />
 
       <div className="main">

@@ -8,7 +8,17 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "opener:allow-open-path",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "$HOME/.Trash"
+        },
+        {
+          "path": "$HOME/.Trash/**"
+        }
+      ]
+    },
     "store:default",
     "dialog:allow-open",
     {

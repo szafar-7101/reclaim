@@ -57,3 +57,19 @@ export async function openTrash(): Promise<void> {
   const home = await defaultScanRoot();
   await revealInFinder(`${home}/.Trash`);
 }
+
+export type Theme = "system" | "light" | "dark";
+
+const THEME_FIELD = "theme";
+
+export async function loadTheme(): Promise<Theme> {
+  const store = await load(STORE_FILE, { autoSave: true });
+  const saved = await store.get<Theme>(THEME_FIELD);
+  return saved === "light" || saved === "dark" ? saved : "system";
+}
+
+export async function saveTheme(theme: Theme): Promise<void> {
+  const store = await load(STORE_FILE, { autoSave: true });
+  await store.set(THEME_FIELD, theme);
+  await store.save();
+}

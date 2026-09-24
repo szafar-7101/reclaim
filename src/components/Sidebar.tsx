@@ -1,4 +1,5 @@
 import type { Project } from "../agents/types";
+import type { Theme } from "../lib/tauri";
 import { bytes } from "../lib/format";
 import { ACTIVITY_TEXT } from "../lib/language";
 
@@ -13,6 +14,8 @@ export function Sidebar({
   totalBytes,
   totalCount,
   onSettings,
+  theme,
+  onTheme,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -22,6 +25,8 @@ export function Sidebar({
   totalBytes: number;
   totalCount: number;
   onSettings: () => void;
+  theme: Theme;
+  onTheme: (t: Theme) => void;
 }) {
   return (
     <nav className="sidebar" aria-label="Sidebar">
@@ -81,7 +86,9 @@ export function Sidebar({
                 </div>
                 <div className="nav-sub">
                   {ACTIVITY_TEXT[p.activity]}
-                  {p.uncommitted_files > 0 && ` · ${p.uncommitted_files} unsaved`}
+                  {p.uncommitted_files > 0 && (
+                    <span className="unsaved"> · {p.uncommitted_files} unsaved</span>
+                  )}
                 </div>
               </div>
               <span className="nav-size">{bytes(p.reclaimable_bytes)}</span>
@@ -91,8 +98,35 @@ export function Sidebar({
       )}
 
       <div className="sidebar-foot">
+        <div className="theme-switch" role="group" aria-label="Appearance">
+          <button
+            className={`theme-btn${theme === "light" ? " is-on" : ""}`}
+            onClick={() => onTheme("light")}
+            title="Light"
+            aria-label="Light appearance"
+          >
+            <IconSun />
+          </button>
+          <button
+            className={`theme-btn${theme === "dark" ? " is-on" : ""}`}
+            onClick={() => onTheme("dark")}
+            title="Dark"
+            aria-label="Dark appearance"
+          >
+            <IconMoon />
+          </button>
+          <button
+            className={`theme-btn${theme === "system" ? " is-on" : ""}`}
+            onClick={() => onTheme("system")}
+            title="Match system"
+            aria-label="Match system appearance"
+          >
+            <IconAuto />
+          </button>
+        </div>
+
         <button className="nav-item" onClick={onSettings}>
-          <IconGear />
+          <IconSliders />
           <div className="nav-body">
             <div className="nav-name">Settings</div>
           </div>
@@ -122,11 +156,41 @@ function IconClock() {
   );
 }
 
-function IconGear() {
+/** Sliders rather than a gear. A gear at 16px turns to mush — its teeth land
+ *  between pixels — where three tracks and two handles stay legible. */
+function IconSliders() {
   return (
     <svg {...svg} className="nav-icon">
-      <circle cx="8" cy="8" r="2.3" />
-      <path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7L3.5 3.5" />
+      <path d="M2.5 4.5h11M2.5 11.5h11" />
+      <circle cx="6" cy="4.5" r="1.8" fill="var(--sidebar)" />
+      <circle cx="10.5" cy="11.5" r="1.8" fill="var(--sidebar)" />
+    </svg>
+  );
+}
+
+function IconSun() {
+  return (
+    <svg {...svg} width="14" height="14">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1" />
+    </svg>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg {...svg} width="14" height="14">
+      <path d="M13.2 9.6A5.6 5.6 0 016.4 2.8a5.6 5.6 0 106.8 6.8z" />
+    </svg>
+  );
+}
+
+function IconAuto() {
+  return (
+    <svg {...svg} width="14" height="14">
+      <circle cx="8" cy="8" r="5.6" />
+      <path d="M8 2.4v11.2" />
+      <path d="M8 13.6A5.6 5.6 0 008 2.4z" fill="currentColor" stroke="none" />
     </svg>
   );
 }

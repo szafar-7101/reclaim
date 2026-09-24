@@ -20,6 +20,15 @@
   --solid-hover: #2b2b2b;
   --on-solid: #ffffff;
 
+  /* The only hues in the app. Reserved for states that want a second look —
+     never for decoration, never for ordinary emphasis. */
+  --warn: #9a6100;
+  --warn-bg: #fff6e2;
+  --warn-line: #e8c37a;
+  --danger: #b3261e;
+  --danger-bg: #fdeceb;
+  --danger-line: #eba9a4;
+
   --r-card: 12px;
   --r-ctl: 8px;
 
@@ -27,25 +36,61 @@
   --mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
+/* Dark tokens apply when the OS asks for dark and the user hasn't overridden
+   it, and again when the user has explicitly chosen dark. Both selectors carry
+   the same values so the toggle wins in either direction. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0a0a0a;
-    --sidebar: #0f0f0f;
-    --card: #131313;
-    --hairline: #282828;
-    --hairline-soft: #1f1f1f;
+  :root:not([data-theme="light"]) {
+  --bg: #0a0a0a;
+  --sidebar: #0f0f0f;
+  --card: #131313;
+  --hairline: #282828;
+  --hairline-soft: #1f1f1f;
 
-    --ink: #fafafa;
-    --ink-2: #a3a3a3;
-    --ink-3: #6b6b6b;
+  --ink: #fafafa;
+  --ink-2: #a3a3a3;
+  --ink-3: #6b6b6b;
 
-    --fill: #1d1d1d;
-    --fill-hover: #262626;
+  --fill: #1d1d1d;
+  --fill-hover: #262626;
 
-    --solid: #fafafa;
-    --solid-hover: #e0e0e0;
-    --on-solid: #0a0a0a;
+  --solid: #fafafa;
+  --solid-hover: #e0e0e0;
+  --on-solid: #0a0a0a;
+
+  --warn: #f0b642;
+  --warn-bg: #2a1f08;
+  --warn-line: #5c4414;
+  --danger: #ff6f63;
+  --danger-bg: #2d1310;
+  --danger-line: #62241f;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --sidebar: #0f0f0f;
+  --card: #131313;
+  --hairline: #282828;
+  --hairline-soft: #1f1f1f;
+
+  --ink: #fafafa;
+  --ink-2: #a3a3a3;
+  --ink-3: #6b6b6b;
+
+  --fill: #1d1d1d;
+  --fill-hover: #262626;
+
+  --solid: #fafafa;
+  --solid-hover: #e0e0e0;
+  --on-solid: #0a0a0a;
+
+  --warn: #f0b642;
+  --warn-bg: #2a1f08;
+  --warn-line: #5c4414;
+  --danger: #ff6f63;
+  --danger-bg: #2d1310;
+  --danger-line: #62241f;
 }
 
 * { box-sizing: border-box; }
@@ -122,6 +167,7 @@ input { font: inherit; }
   font-size: 12px; color: var(--ink-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.nav-sub .unsaved { color: var(--warn); font-style: normal; }
 .nav-size {
   font-size: 12.5px; color: var(--ink-2);
   font-variant-numeric: tabular-nums; flex-shrink: 0;
@@ -132,7 +178,7 @@ input { font: inherit; }
   width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
   background: var(--ink);
 }
-.dot-live      { opacity: 1; }
+.dot-live      { background: var(--warn); }
 .dot-recent    { opacity: 0.55; }
 .dot-dormant   { opacity: 0.3; }
 .dot-stale     { opacity: 0.18; }
@@ -140,6 +186,24 @@ input { font: inherit; }
 .dot-unknown   { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
 
 .sidebar-foot { margin-top: auto; padding-top: 12px; }
+
+/* Appearance switch. Icon-only because the three states are self-evident and
+   labels here would out-shout the project list above them. */
+.theme-switch {
+  display: flex; gap: 2px;
+  background: var(--fill); border-radius: 9px; padding: 2px;
+  margin: 0 0 6px;
+}
+.theme-btn {
+  flex: 1; display: grid; place-items: center;
+  height: 26px; border-radius: 7px;
+  color: var(--ink-3); transition: background 0.12s, color 0.12s;
+}
+.theme-btn:hover:not(.is-on) { color: var(--ink); }
+.theme-btn.is-on {
+  background: var(--card); color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.07);
+}
 .sidebar-empty { font-size: 13px; color: var(--ink-3); padding: 8px 10px; }
 
 /* ============================ header ============================ */
@@ -247,7 +311,7 @@ input { font: inherit; }
 /* The one that matters gets ink, not colour. */
 .banner-ok { background: var(--solid); color: var(--on-solid); border-color: var(--solid); }
 .banner-ok .link { color: var(--on-solid); text-decoration-color: rgba(255, 255, 255, 0.5); }
-.banner-error { border-color: var(--ink); }
+.banner-error { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-line); }
 .banner-info { background: var(--fill); }
 .banner .link { margin-left: auto; white-space: nowrap; }
 
@@ -320,7 +384,7 @@ input { font: inherit; }
   justify-self: end; white-space: nowrap;
 }
 .pill-safe   { background: var(--solid); color: var(--on-solid); }
-.pill-review { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink-3); }
+.pill-review { background: var(--warn-bg); color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn-line); }
 .pill-keep   { background: var(--fill); color: var(--ink-3); }
 
 /* ---------- expanded ---------- */
@@ -340,7 +404,7 @@ input { font: inherit; }
 .fact dd { margin: 0; font-size: 13.5px; }
 .fact dd.mono { font-size: 12.5px; word-break: break-all; }
 .fact dd.cmd { font-weight: 550; }
-.fact dd.warn { font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.fact dd.warn { font-weight: 600; color: var(--warn); }
 
 .detail-error { margin: 14px 0 0; font-size: 13px; color: var(--ink-2); }
 
@@ -417,7 +481,7 @@ input { font: inherit; }
 .hist-row:hover { background: var(--fill); }
 .hist-when { font-size: 13.5px; font-weight: 560; }
 .hist-what { font-size: 13.5px; color: var(--ink-2); }
-.hist-failed { font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
+.hist-failed { font-style: normal; color: var(--warn); }
 .hist-size { font-size: 13.5px; font-weight: 620; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
 
 .hist-paths {
