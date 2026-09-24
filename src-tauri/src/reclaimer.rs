@@ -1,4 +1,4 @@
-//! Agent 5 — Reclaimer.
+//! Agent 6 — Reclaimer.
 //!
 //! Deliberately contains no AI. The component that touches a user's files is
 //! the last place that should be probabilistic. It takes an explicit list of

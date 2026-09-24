@@ -3,7 +3,7 @@ import { getClient, describe } from "./jev";
 import type { Candidate, Classification, ArtifactKind } from "./types";
 
 /**
- * Agent 2 — Classifier.
+ * Agent 3 — Classifier.
  *
  * Answers one question: what *is* this directory? It does not decide whether
  * to delete anything. Keeping identification separate from judgement is what

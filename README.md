@@ -27,9 +27,12 @@ doesn't.
 
 ## What Reclaim does instead
 
-Reclaim asks [TypeSafe AI's **Jev**](https://typesafe.ai/blog/introducing-system-one-models-and-jev)
-— a System One model that returns typed probabilistic decisions rather than text
-— and gates on the calibrated confidence that comes back.
+Reclaim settles the obvious cases with deterministic rules — `__pycache__` is
+`__pycache__`, and a lookup table is more accurate than a model there — and
+escalates only what is genuinely ambiguous to
+[TypeSafe AI's **Jev**](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+a System One model that returns typed probabilistic decisions rather than text.
+Either way, the verdict gates on calibrated confidence.
 
 ```
 confidence ≥ 95%   →  safe        pre-selected for you
@@ -42,26 +45,28 @@ receipt.
 
 ---
 
-## The five agents
+## The six agents
 
 ```
-┌─ 1. PROSPECTOR ──────  Rust. Walks the filesystem, gathers context.        no AI
+┌─ 1. PROSPECTOR ──────  Rust. Walks the disk, gathers context.              no AI
+├─ 2. TRIAGE ──────────  Rules. Settles the obvious, flags the ambiguous.    no AI
 │
-├─ 2. CLASSIFIER ──────  Jev Choice.  What kind of directory is this?
+├─ 3. CLASSIFIER ──────  Jev Choice.  What kind of directory is this?
+├─ 4. SAFETY AUDITOR ──  Jev Noul ×2 + Score.  Can it come back? Is it unique?
+├─ 5. RECONSTRUCTOR ───  Jev Noul ×2.  What command restores it?
 │
-├─ 3. SAFETY AUDITOR ──  Jev Noul + Score.  Regenerable? Unique work? Risk?
-│
-├─ 4. RECONSTRUCTOR ───  Jev Noul.  Can we name the command that restores it?
-│
-└─ 5. RECLAIMER ───────  Rust. Moves to Trash, writes an undo receipt.       no AI
+└─ 6. RECLAIMER ───────  Rust. Moves to Trash, writes a receipt.             no AI
 ```
 
-**Agents 1 and 5 have no AI in them, on purpose.** The filesystem walk should be
-fast and deterministic. The component that touches your files should be dumb,
-auditable, and reversible. Putting a model in either would be a mistake.
+**Half the pipeline has no model in it, on purpose.** The filesystem walk should
+be fast and deterministic. Most classification is a lookup, not a judgement. And
+the component that touches your files should be dumb, auditable, and reversible.
 
-Agents 2, 3 and 4 are independent given the same input, so they run
-concurrently — one round trip, not three.
+Only what stage 2 cannot settle reaches 3–5 — about one directory in five. Those
+three are independent given the same input, so they run concurrently: one round
+trip, not three.
+
+**Full detail on each: [AGENTS.md](AGENTS.md).**
 
 ### Why three agents instead of one call
 
@@ -100,6 +105,9 @@ a low-confidence identification must never produce a high-confidence verdict.
 ## Safety
 
 - **Trash, never `rm`.** Everything is recoverable until you empty it.
+- **Every artifact is tied to its project.** Reclaim walks up to the nearest git
+  repository, then shows you the branch, the last commit, and how many files have
+  uncommitted changes — so you know what you'd actually be disturbing.
 - **Every run rehearses first.** A dry pass runs the identical protected-path
   checks; if anything would be refused, nothing moves.
 - **A hard floor below the model.** `reclaimer.rs` refuses the home directory,
@@ -114,16 +122,19 @@ a low-confidence identification must never produce a high-confidence verdict.
 
 ## Running it
 
-Requires [Rust](https://rustup.rs), Node 20+, and a TypeSafe API key from
-[console.typesafe.ai/keys](https://console.typesafe.ai/keys).
+Requires [Rust](https://rustup.rs) and Node 20+.
 
 ```sh
 npm install
 npm run tauri dev
 ```
 
-Paste your key on first launch. It's stored in the Tauri store on your machine
-and is never bundled into the binary.
+**No API key needed.** Triage handles every unambiguous case offline and free;
+anything it can't settle is shown as "worth checking" for you to decide.
+
+Adding a [TypeSafe key](https://console.typesafe.ai/keys) in Settings lets the
+model resolve those automatically. It's stored on your machine and never bundled
+into the binary.
 
 To build a distributable `.dmg`:
 

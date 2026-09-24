@@ -14,7 +14,7 @@ use walkdir::WalkDir;
 /// Directory names worth *considering*. This is a wide net on purpose — it
 /// decides what gets looked at, never what gets deleted. Narrowing this list
 /// costs recall; the confidence gate downstream is what protects the user.
-const CANDIDATE_DIRS: &[&str] = &[
+pub const CANDIDATE_DIRS: &[&str] = &[
     // JavaScript / TypeScript
     "node_modules", ".next", ".nuxt", ".svelte-kit", ".turbo", ".parcel-cache",
     "bower_components", ".angular", ".vite",
@@ -30,7 +30,7 @@ const CANDIDATE_DIRS: &[&str] = &[
 ];
 
 /// Manifests that prove a directory can be rebuilt. Their presence is the
-/// single strongest signal Agent 4 has, so we collect them precisely.
+/// single strongest signal Agent 5 has, so we collect them precisely.
 const MANIFESTS: &[&str] = &[
     "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb",
     "Cargo.toml", "Cargo.lock",
@@ -56,6 +56,11 @@ pub struct Candidate {
     pub in_git_repo: bool,
     /// Depth below the scan root.
     pub depth: usize,
+    /// Unix seconds of the newest write inside. Lets the UI show a real date
+    /// rather than only a relative age.
+    pub modified_secs: u64,
+    /// The project this artifact belongs to, if we could find one.
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +73,10 @@ pub struct ScanSummary {
     /// Paths we could not read. Surfaced rather than swallowed — a silent
     /// permission failure would understate the total and erode trust.
     pub skipped: Vec<String>,
+    /// Projects the candidates belong to, largest reclaimable first.
+    pub projects: Vec<crate::project::Project>,
+    /// Capacity of the volume holding the scan root.
+    pub disk: Option<crate::disk::DiskInfo>,
 }
 
 fn now_secs() -> u64 {
@@ -186,14 +195,66 @@ pub fn scan(root: &Path, max_depth: usize) -> ScanSummary {
                 sibling_manifests: manifests_in(parent),
                 in_git_repo: has_git(parent),
                 depth: *depth,
+                modified_secs: newest,
+                project_id: None,
             }
         })
         .filter(|c| c.size_bytes > 0)
         .collect();
 
+    let mut candidates = candidates;
     let total_bytes = candidates.iter().map(|c| c.size_bytes).sum();
 
-    let mut candidates = candidates;
+    // --- project association -------------------------------------------------
+    //
+    // Profiling a project runs `git` and walks its source tree, so it must
+    // happen once per project, not once per candidate. Resolve roots first,
+    // deduplicate, then profile the unique set in parallel.
+
+    let artifact_names: Vec<String> =
+        CANDIDATE_DIRS.iter().map(|s| s.to_string()).collect();
+
+    let roots: Vec<Option<std::path::PathBuf>> = candidates
+        .par_iter()
+        .map(|c| {
+            let start = Path::new(&c.parent_path);
+            crate::project::find_root(start, root)
+        })
+        .collect();
+
+    let mut unique: Vec<std::path::PathBuf> = roots.iter().flatten().cloned().collect();
+    unique.sort();
+    unique.dedup();
+
+    let mut projects: Vec<crate::project::Project> = unique
+        .par_iter()
+        .map(|r| crate::project::profile(r, &artifact_names))
+        .collect();
+
+    // Index by root path so candidates can be stamped with their project id.
+    let index: std::collections::HashMap<String, String> = projects
+        .iter()
+        .map(|p| (p.root.clone(), p.id.clone()))
+        .collect();
+
+    for (candidate, project_root) in candidates.iter_mut().zip(roots.iter()) {
+        candidate.project_id = project_root
+            .as_ref()
+            .and_then(|r| index.get(&r.display().to_string()))
+            .cloned();
+    }
+
+    // Roll the artifact totals back up onto each project.
+    for project in projects.iter_mut() {
+        let owned: Vec<&Candidate> = candidates
+            .iter()
+            .filter(|c| c.project_id.as_deref() == Some(project.id.as_str()))
+            .collect();
+        project.reclaimable_bytes = owned.iter().map(|c| c.size_bytes).sum();
+        project.candidate_count = owned.len();
+    }
+
+    projects.sort_by(|a, b| b.reclaimable_bytes.cmp(&a.reclaimable_bytes));
     candidates.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
 
     ScanSummary {
@@ -203,5 +264,7 @@ pub fn scan(root: &Path, max_depth: usize) -> ScanSummary {
         scanned_dirs,
         elapsed_ms: started.elapsed().as_millis(),
         skipped,
+        projects,
+        disk: crate::disk::for_path(&root.display().to_string()),
     }
 }

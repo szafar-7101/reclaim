@@ -1,3 +1,5 @@
+mod disk;
+mod project;
 mod prospector;
 mod reclaimer;
 
@@ -22,7 +24,7 @@ async fn scan_disk(root: String, max_depth: Option<usize>) -> Result<ScanSummary
         .map_err(|e| e.to_string())
 }
 
-/// Agent 5 entry point.
+/// Agent 6 entry point.
 #[tauri::command]
 async fn reclaim_paths(
     requests: Vec<ReclaimRequest>,

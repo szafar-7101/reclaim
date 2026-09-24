@@ -3,7 +3,7 @@ import { getClient, describe } from "./jev";
 import type { Candidate, Reconstruction } from "./types";
 
 /**
- * Agent 4 — Reconstructor.
+ * Agent 5 — Reconstructor.
  *
  * "Safe to delete" and "easy to get back" are different claims. This agent
  * establishes the second one, and it is what turns a scary delete into a

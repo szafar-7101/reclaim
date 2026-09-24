@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { runPipeline, GATE } from "./agents/pipeline";
-import type { Assessment, ScanSummary, Verdict } from "./agents/types";
+import { runPipeline, countEscalations } from "./agents/pipeline";
+import type { Assessment, ScanSummary } from "./agents/types";
 import {
   defaultScanRoot,
   loadApiKey,
@@ -10,75 +10,73 @@ import {
   scanDisk,
 } from "./lib/tauri";
 import { bytes } from "./lib/format";
-import { ApiKeyGate } from "./components/ApiKeyGate";
-import { CandidateRow } from "./components/CandidateRow";
-import { ScanProgress } from "./components/ScanProgress";
+import { CapacityBar } from "./components/CapacityBar";
+import { Sidebar } from "./components/Sidebar";
+import { ArtifactTable, type SortKey } from "./components/ArtifactTable";
+import { SettingsSheet } from "./components/SettingsSheet";
 import "./App.css";
 
-type Phase = "idle" | "scanning" | "assessing" | "ready" | "reclaiming" | "done";
-
-const VERDICT_ORDER: Verdict[] = ["safe", "review", "keep"];
-
-const VERDICT_COPY: Record<Verdict, { title: string; blurb: string }> = {
-  safe: {
-    title: "Safe to reclaim",
-    blurb: `Every agent agrees, at ${Math.round(GATE.safe * 100)}% confidence or better. Pre-selected.`,
-  },
-  review: {
-    title: "Worth a look",
-    blurb: "Probably fine, but at least one agent hesitated. Your call.",
-  },
-  keep: {
-    title: "Keeping",
-    blurb: "Below the confidence floor, or identified as something we never touch.",
-  },
-};
+type Phase = "idle" | "scanning" | "checking" | "ready" | "removing";
 
 export default function App() {
-  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
   const [root, setRoot] = useState("");
   const [home, setHome] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [scan, setScan] = useState<ScanSummary | null>(null);
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
-  const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
+  const [items, setItems] = useState<Assessment[]>([]);
+  const [progress, setProgress] = useState({ done: 0, total: 0, escalated: 0 });
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortKey>("size");
   const [error, setError] = useState<string | null>(null);
-  const [reclaimed, setReclaimed] = useState<number | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [cleared, setCleared] = useState<number | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const [key, defaultRoot] = await Promise.all([loadApiKey(), defaultScanRoot()]);
+      const [key, homeDir] = await Promise.all([loadApiKey(), defaultScanRoot()]);
       setApiKey(key);
-      setRoot(defaultRoot);
-      setHome(defaultRoot);
+      setHome(homeDir);
+      setRoot(homeDir);
     })();
   }, []);
 
-  const grouped = useMemo(() => {
-    const map: Record<Verdict, Assessment[]> = { safe: [], review: [], keep: [] };
-    for (const a of assessments) map[a.verdict].push(a);
-    for (const key of VERDICT_ORDER) {
-      map[key].sort((x, y) => y.candidate.size_bytes - x.candidate.size_bytes);
-    }
-    return map;
-  }, [assessments]);
+  const visible = useMemo(
+    () =>
+      projectFilter === null
+        ? items
+        : items.filter((a) => a.candidate.project_id === projectFilter),
+    [items, projectFilter],
+  );
+
+  const safeTotal = useMemo(
+    () =>
+      items
+        .filter((a) => a.verdict === "safe")
+        .reduce((s, a) => s + a.candidate.size_bytes, 0),
+    [items],
+  );
 
   const selectedBytes = useMemo(
     () =>
-      assessments
+      items
         .filter((a) => selected.has(a.candidate.id))
-        .reduce((sum, a) => sum + a.candidate.size_bytes, 0),
-    [assessments, selected],
+        .reduce((s, a) => s + a.candidate.size_bytes, 0),
+    [items, selected],
+  );
+
+  const activeProject = useMemo(
+    () => scan?.projects.find((p) => p.id === projectFilter) ?? null,
+    [scan, projectFilter],
   );
 
   const handleScan = useCallback(async () => {
-    if (!apiKey) return;
     setError(null);
-    setReclaimed(null);
-    setAssessments([]);
+    setCleared(null);
+    setItems([]);
     setSelected(new Set());
+    setProjectFilter(null);
     setPhase("scanning");
 
     try {
@@ -90,11 +88,18 @@ export default function App() {
         return;
       }
 
-      setPhase("assessing");
-      setProgress({ done: 0, total: summary.candidates.length, current: "" });
+      setPhase("checking");
+      setProgress({
+        done: 0,
+        total: summary.candidates.length,
+        escalated: apiKey ? countEscalations(summary.candidates) : 0,
+      });
 
-      const results = await runPipeline(apiKey, summary.candidates, setProgress);
-      setAssessments(results);
+      const results = await runPipeline(apiKey || null, summary.candidates, (p) =>
+        setProgress({ done: p.done, total: p.total, escalated: p.escalated }),
+      );
+
+      setItems(results);
       setSelected(
         new Set(results.filter((r) => r.verdict === "safe").map((r) => r.candidate.id)),
       );
@@ -113,16 +118,16 @@ export default function App() {
     });
   }, []);
 
-  const toggleExpanded = useCallback((id: string) => {
-    setExpanded((prev) => {
+  const toggleAll = useCallback((ids: string[], checked: boolean) => {
+    setSelected((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      for (const id of ids) checked ? next.add(id) : next.delete(id);
       return next;
     });
   }, []);
 
-  const handleReclaim = useCallback(async () => {
-    const picked = assessments.filter((a) => selected.has(a.candidate.id));
+  const handleRemove = useCallback(async () => {
+    const picked = items.filter((a) => selected.has(a.candidate.id));
     if (picked.length === 0) return;
 
     const requests = picked.map((a) => ({
@@ -130,177 +135,177 @@ export default function App() {
       bytes: a.candidate.size_bytes,
     }));
 
-    setPhase("reclaiming");
+    setPhase("removing");
     setError(null);
 
     try {
-      // Always rehearse first. The dry run runs the same protected-path checks
-      // as the real pass, so a refusal surfaces before anything moves.
+      // Rehearse first: the dry run applies the same safety checks, so anything
+      // that would be refused surfaces before a single file moves.
       const rehearsal = await reclaimPaths(requests, true);
       const refused = rehearsal.outcomes.filter((o) => !o.ok);
-
       if (refused.length > 0) {
         setError(
-          `Refused ${refused.length} path${refused.length === 1 ? "" : "s"}: ${refused[0].error}`,
+          `Reclaim stopped before moving anything. ${refused.length} folder(s) couldn't be removed safely.`,
         );
         setPhase("ready");
         return;
       }
 
       const report = await reclaimPaths(requests, false);
-      setReclaimed(report.bytes_reclaimed);
-      setAssessments((prev) => prev.filter((a) => !selected.has(a.candidate.id)));
+      setCleared(report.bytes_reclaimed);
+      setItems((prev) => prev.filter((a) => !selected.has(a.candidate.id)));
       setSelected(new Set());
-      setPhase("done");
+      setPhase("ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setPhase("ready");
     }
-  }, [assessments, selected]);
+  }, [items, selected]);
 
-  if (apiKey === null) {
-    return <div className="boot">Loading…</div>;
-  }
-
-  if (!apiKey) {
-    return (
-      <ApiKeyGate
-        onSave={async (key) => {
-          await saveApiKey(key);
-          setApiKey(key);
-        }}
-      />
-    );
-  }
-
-  const busy = phase === "scanning" || phase === "assessing" || phase === "reclaiming";
+  const busy = phase === "scanning" || phase === "checking" || phase === "removing";
+  const pct = progress.total ? (progress.done / progress.total) * 100 : 0;
 
   return (
-    <div className="app">
-      <header className="header">
-        <div className="brand">
-          <h1>Reclaim</h1>
-          <span className="tagline">Confidence-gated disk recovery</span>
-        </div>
-        <button className="ghost" onClick={() => setApiKey("")}>
-          API key
-        </button>
-      </header>
+    <div className="shell">
+      <Sidebar
+        projects={scan?.projects ?? []}
+        selectedId={projectFilter}
+        onSelect={setProjectFilter}
+        totalBytes={items.reduce((s, a) => s + a.candidate.size_bytes, 0)}
+        totalCount={items.length}
+        onSettings={() => setShowSettings(true)}
+      />
 
-      <section className="controls">
-        <button
-          className="path"
-          disabled={busy}
-          onClick={async () => {
-            const picked = await pickFolder(root);
-            if (picked) setRoot(picked);
-          }}
-        >
-          <span className="path-label">Scanning</span>
-          <span className="path-value">{root.replace(home, "~")}</span>
-        </button>
-        <button className="primary" onClick={handleScan} disabled={busy || !root}>
-          {phase === "scanning"
-            ? "Walking disk…"
-            : phase === "assessing"
-              ? "Assessing…"
-              : "Scan"}
-        </button>
-      </section>
-
-      {error && <div className="error">{error}</div>}
-
-      {phase === "assessing" && <ScanProgress {...progress} />}
-
-      {scan && phase !== "scanning" && (
-        <div className="summary">
-          <Stat label="Found" value={`${scan.candidates.length}`} sub="candidates" />
-          <Stat label="Total" value={bytes(scan.total_bytes)} sub="on disk" />
-          <Stat
-            label="Reclaimable"
-            value={bytes(grouped.safe.reduce((s, a) => s + a.candidate.size_bytes, 0))}
-            sub="high confidence"
-            accent
-          />
-          <Stat label="Scanned" value={`${scan.scanned_dirs}`} sub={`in ${scan.elapsed_ms}ms`} />
-        </div>
-      )}
-
-      {reclaimed !== null && (
-        <div className="success">
-          Reclaimed <strong>{bytes(reclaimed)}</strong>. Everything went to Trash — recoverable
-          until you empty it.
-        </div>
-      )}
-
-      <main className="results">
-        {VERDICT_ORDER.map((verdict) => {
-          const items = grouped[verdict];
-          if (items.length === 0) return null;
-          const total = items.reduce((s, a) => s + a.candidate.size_bytes, 0);
-
-          return (
-            <section key={verdict} className={`group group-${verdict}`}>
-              <div className="group-head">
-                <h2>{VERDICT_COPY[verdict].title}</h2>
-                <span className="group-meta">
-                  {items.length} · {bytes(total)}
-                </span>
-              </div>
-              <p className="group-blurb">{VERDICT_COPY[verdict].blurb}</p>
-              <div className="rows">
-                {items.map((a) => (
-                  <CandidateRow
-                    key={a.candidate.id}
-                    assessment={a}
-                    home={home}
-                    selected={selected.has(a.candidate.id)}
-                    expanded={expanded.has(a.candidate.id)}
-                    onToggle={() => toggle(a.candidate.id)}
-                    onExpand={() => toggleExpanded(a.candidate.id)}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-
-        {phase === "ready" && assessments.length === 0 && scan && (
-          <div className="empty">Nothing reclaimable found under this folder.</div>
-        )}
-      </main>
-
-      {selected.size > 0 && (
-        <footer className="footer">
-          <div className="footer-info">
-            <strong>{bytes(selectedBytes)}</strong> selected across {selected.size}{" "}
-            {selected.size === 1 ? "directory" : "directories"}
-          </div>
-          <button className="danger" onClick={handleReclaim} disabled={busy}>
-            {phase === "reclaiming" ? "Moving to Trash…" : "Move to Trash"}
+      <div className="main">
+        <header className="header">
+          <button
+            className="folder"
+            disabled={busy}
+            onClick={async () => {
+              const picked = await pickFolder(root || home);
+              if (picked) setRoot(picked);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" opacity="0.6">
+              <path d="M1.5 3.5A1.5 1.5 0 013 2h3l1.2 1.5H13A1.5 1.5 0 0114.5 5v6.5A1.5 1.5 0 0113 13H3a1.5 1.5 0 01-1.5-1.5v-8z" />
+            </svg>
+            <span>{root ? root.replace(home, "~") : "Choose a folder"}</span>
           </button>
-        </footer>
+
+          <button className="btn-primary" onClick={handleScan} disabled={busy || !root}>
+            {phase === "scanning" ? "Looking…" : phase === "checking" ? "Checking…" : "Scan"}
+          </button>
+
+          <div className="header-spacer" />
+        </header>
+
+        {busy && (
+          <div className="progress">
+            <div
+              className="progress-fill"
+              style={{ width: phase === "scanning" ? "100%" : `${pct}%` }}
+            />
+          </div>
+        )}
+
+        <div className="scroll">
+          <div className="title-block">
+            <h1>{activeProject ? activeProject.name : "Free up space"}</h1>
+            <p>
+              {phase === "scanning"
+                ? "Looking through your folders…"
+                : phase === "checking"
+                  ? `Working out what's safe — ${progress.done} of ${progress.total}`
+                  : activeProject
+                    ? activeProject.root.replace(home, "~")
+                    : "Files your projects can rebuild, so you don't have to keep them."}
+            </p>
+          </div>
+
+          {error && <div className="banner banner-error">{error}</div>}
+
+          {cleared !== null && (
+            <div className="banner banner-ok">
+              Moved <strong>{bytes(cleared)}</strong> to the Trash. You can still get it back
+              until you empty it.
+            </div>
+          )}
+
+          {!apiKey && items.length > 0 && (
+            <div className="banner banner-info">
+              A few folders were too unusual to judge automatically — they're marked
+              “Worth checking”.
+              <button className="link" onClick={() => setShowSettings(true)}>
+                Turn on smarter checks
+              </button>
+            </div>
+          )}
+
+          <CapacityBar disk={scan?.disk ?? null} reclaimable={safeTotal} />
+
+          {items.length > 0 ? (
+            <ArtifactTable
+              assessments={visible}
+              projects={scan?.projects ?? []}
+              home={home}
+              selected={selected}
+              onToggle={toggle}
+              onToggleAll={toggleAll}
+              sort={sort}
+              onSort={setSort}
+              title={activeProject ? "In this project" : "What Reclaim found"}
+            />
+          ) : (
+            <EmptyState phase={phase} scanned={scan !== null} />
+          )}
+        </div>
+
+        {selected.size > 0 && (
+          <footer className="actionbar">
+            <span className="actionbar-count">
+              <strong>{bytes(selectedBytes)}</strong> selected in {selected.size}{" "}
+              {selected.size === 1 ? "folder" : "folders"}
+            </span>
+            <div className="spacer" />
+            <button className="btn-secondary" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+            <button className="btn-danger" onClick={handleRemove} disabled={busy}>
+              {phase === "removing" ? "Moving…" : "Move to Trash"}
+            </button>
+          </footer>
+        )}
+      </div>
+
+      {showSettings && (
+        <SettingsSheet
+          apiKey={apiKey}
+          onSave={async (key) => {
+            await saveApiKey(key);
+            setApiKey(key);
+            setShowSettings(false);
+          }}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  accent?: boolean;
-}) {
+function EmptyState({ phase, scanned }: { phase: Phase; scanned: boolean }) {
+  if (phase === "scanning" || phase === "checking") return null;
+  if (scanned) return <p className="empty">Nothing to clear in this folder.</p>;
+
   return (
-    <div className={`stat${accent ? " stat-accent" : ""}`}>
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-      <span className="stat-sub">{sub}</span>
+    <div className="empty empty-first">
+      <h2>Nothing scanned yet</h2>
+      <p>
+        Reclaim finds the folders your projects create and can recreate — downloaded
+        packages, build output, caches — and clears the ones you don't need.
+      </p>
+      <p className="empty-note">
+        Choose a folder above and press Scan. Nothing is removed unless you select it.
+      </p>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { getClient, describe } from "./jev";
 import type { Candidate, SafetyAudit } from "./types";
 
 /**
- * Agent 3 — Safety Auditor.
+ * Agent 4 — Safety Auditor.
  *
  * Asks the two questions that actually matter, from opposite directions:
  * can this come back, and could something unique be lost? Asking both and

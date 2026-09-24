@@ -31,3 +31,14 @@ export function shortPath(path: string, home?: string): string {
   if (parts.length <= 5) return p;
   return [parts[0], parts[1], "…", ...parts.slice(-3)].join("/");
 }
+
+/** An actual date for a unix timestamp. The relative age answers "is this
+ *  stale"; the date answers "was that before or after I started the rewrite". */
+export function onDate(unixSecs: number): string {
+  if (!unixSecs) return "unknown";
+  return new Date(unixSecs * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
