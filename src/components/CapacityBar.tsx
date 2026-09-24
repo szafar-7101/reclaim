@@ -25,7 +25,7 @@ export function CapacityBar({
         <div className="cap-numbers">
           {reclaimable > 0 ? (
             <>
-              <span className="cap-big is-green">{bytes(reclaimable)}</span>
+              <span className="cap-big">{bytes(reclaimable)}</span>
               <span className="cap-caption">can be cleared</span>
             </>
           ) : (

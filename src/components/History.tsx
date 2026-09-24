@@ -34,7 +34,7 @@ export function History({ home, refreshKey }: { home: string; refreshKey: number
       <div className="card">
         <div className="card-pad">
           <div className="cap-numbers">
-            <span className="cap-big is-green">{bytes(total)}</span>
+            <span className="cap-big">{bytes(total)}</span>
             <span className="cap-caption">
               cleared across {folders} {folders === 1 ? "folder" : "folders"}
             </span>
